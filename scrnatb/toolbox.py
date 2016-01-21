@@ -35,18 +35,22 @@ def read_kallisto_dir(pattern):
         
     return TPMs
 
-def read_sailfish(sample_path):
-    quant_file = sample_path + '/quant.genes.sf'
+def read_sailfish(sample_path, isoforms=False):
+    if isoforms:
+        quant_file = sample_path + '/quant.sf'
+    else:
+        quant_file = sample_path + '/quant.genes.sf'
+    
     df = pd.read_table(quant_file, engine='c',
                                    usecols=['Name', 'TPM'],
                                    index_col=0,
                                    dtype={'Name': np.str, 'TPM': np.float64})
     return df
 
-def read_sailfish_dir(pattern):
+def read_sailfish_dir(pattern, isoforms=False):
     TPMs = pd.DataFrame()
     for sample_path in tqdm(iglob(pattern)):
-        sample_df = read_sailfish(sample_path)
+        sample_df = read_sailfish(sample_path, isoforms=isoforms)
         TPMs[sample_path] = sample_df['TPM']
         
     return TPMs
@@ -75,7 +79,7 @@ def read_cufflinks_dir(pattern):
     return TPMs
 
 
-def read_quants(sample_dir, suffix, tool='salmon'):
+def read_quants(sample_dir, suffix='_salmon_out', tool='salmon', isoforms=False):
     pattern = '{}*{}'.format(sample_dir, suffix)
     
     if tool == 'kallisto':
@@ -85,7 +89,7 @@ def read_quants(sample_dir, suffix, tool='salmon'):
         return read_sailfish_dir(pattern)
     
     elif tool == 'salmon':
-        return read_sailfish_dir(pattern)
+        return read_sailfish_dir(pattern, isoforms=isoforms)
     
     elif tool == 'cufflinks':
         return read_cufflinks_dir(pattern)

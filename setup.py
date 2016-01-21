@@ -3,6 +3,7 @@
 from setuptools import setup
 
 setup(
-    name='scrna-toolbox',
-    packages=['scrna-toolbox']
+    name='scrnatb',
+    version='0.0',
+    packages=['scrnatb']
 )
