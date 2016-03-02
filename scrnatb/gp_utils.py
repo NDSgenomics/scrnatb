@@ -1,5 +1,6 @@
 import numpy as np
 from scipy import optimize
+from scipy import stats
 from GPclust import OMGP
 from tqdm import tqdm
 
@@ -46,3 +47,25 @@ def identify_bifurcation_point(omgp, n_splits=30):
     p, e = optimize.curve_fit(breakpoint_linear, x, y)
     
     return p[0]
+
+
+def phase_trajectory(lat_pse_tim_r, known_time):
+    t = lat_pse_tim_r
+    t_pos = t - t.min()
+    d = known_time
+
+    @np.vectorize
+    def align_objective(t0): 
+        return -stats.pearsonr((t_pos + t0) % t_pos.max(), d)[0] ** 2
+
+    # One could use scipy.optimize to find the optimal phase. But in practice it is to
+    # quick to evaluate the function that simple argmin on a grid works very well.
+        
+    xx = np.linspace(t_pos.min(), t_pos.max(), 200)
+    yy = align_objective(xx)
+
+    res = {'x': xx[yy.argmin()]}
+
+    new_t = (t_pos + res['x']) % t_pos.max() + t.min()
+    
+    return new_t
