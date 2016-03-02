@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 from scipy import optimize
 from scipy import stats
 from GPclust import OMGP
@@ -69,3 +70,62 @@ def phase_trajectory(lat_pse_tim_r, known_time):
     new_t = (t_pos + res['x']) % t_pos.max() + t.min()
     
     return new_t
+
+def bifurcation_statistics(omgp_gene, expression_matrix):
+    bif_stats = pd.DataFrame(index=expression_matrix.index)
+    bif_stats['bif_ll'] = np.nan
+    bif_stats['amb_ll'] = np.nan
+    bif_stats['shuff_bif_ll'] = np.nan
+    bif_stats['shuff_amb_ll'] = np.nan
+    
+    # Make a "copy" of provided OMGP but assign ambiguous mixture parameters
+    omgp_gene_a = OMGP(omgp_gene.X, omgp_gene.Y,
+                       K=omgp_gene.K,
+                       kernels=omgp_gene.kern,
+                       prior_Z=omgp_gene.prior_Z,
+                       variance=float(omgp_gene.variance))
+
+    omgp_gene_a.phi = np.ones_like(omgp_gene.phi) * 1. / omgp_gene.K
+
+    # To control FDR, perform the same likelihood calculation, but with permuted X values
+
+    shuff_X = np.array(omgp_gene.X).copy()
+    np.random.shuffle(shuff_X)
+
+    omgp_gene_shuff = OMGP(shuff_X, omgp_gene.Y,
+                           K=omgp_gene.K,
+                           kernels=omgp_gene.kern,
+                           prior_Z=omgp_gene.prior_Z,
+                           variance=float(omgp_gene.variance))
+
+    omgp_gene_shuff_a = OMGP(shuff_X, omgp_gene.Y,
+                             K=omgp_gene.K,
+                             kernels=omgp_gene.kern,
+                             prior_Z=omgp_gene.prior_Z,
+                             variance=float(omgp_gene.variance))
+
+    omgp_gene_shuff_a.phi = np.ones_like(omgp_gene.phi) * 1. / omgp_gene.K
+    
+    # Evaluate the likelihoods of the models for every gene
+    for gene in tqdm(expression_matrix.index):
+        omgp_gene.Y = expression_matrix.ix[gene][:, None]
+        omgp_gene.YYT = np.outer(omgp_gene.Y, omgp_gene.Y)
+        bif_stats.ix[gene, 'bif_ll'] = omgp_gene.bound()
+
+        omgp_gene_a.Y = omgp_gene.Y
+        omgp_gene_a.YYT = omgp_gene.YYT
+        bif_stats.ix[gene, 'amb_ll'] = omgp_gene_a.bound()
+
+        omgp_gene_shuff.Y = omgp_gene.Y
+        omgp_gene_shuff.YYT = omgp_gene.YYT
+        bif_stats.ix[gene, 'shuff_bif_ll'] = omgp_gene_shuff.bound()
+
+        omgp_gene_shuff_a.Y = omgp_gene.Y
+        omgp_gene_shuff_a.YYT = omgp_gene.YYT
+        bif_stats.ix[gene, 'shuff_amb_ll'] = omgp_gene_shuff_a.bound()
+    
+    bif_stats['phi0_corr'] = expression_matrix.corrwith(pd.Series(omgp_gene.phi[:, 0], index=expression_matrix.columns), 1)
+    bif_stats['D'] = bif_stats['bif_ll'] - bif_stats['amb_ll']
+    bif_stats['shuff_D'] = bif_stats['shuff_bif_ll'] - bif_stats['shuff_amb_ll']
+    
+    return bif_stats
