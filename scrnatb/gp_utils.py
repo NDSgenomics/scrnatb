@@ -5,6 +5,71 @@ from scipy import stats
 from GPclust import OMGP
 from tqdm import tqdm
 
+class point_sprayer(object):
+    ''' Class for quickly drawing point cloud examples. Useful for demonstrations.
+    
+    Only works with interactive backends. In Jupyter, do %matplotlib notebook.
+    '''
+    def __init__(self, ax, pix_err=1, std=0.1):
+        self.canvas = ax.get_figure().canvas
+        
+        self.rv = stats.multivariate_normal(mean=[0, 0], cov=std ** 2)
+        
+        self.pt_lst = []
+        self.pt_plot = ax.plot([], [], marker='o',
+                               linestyle='none', zorder=5)[0]
+        self.pix_err = pix_err
+        
+        self.connect()
+        self.press = False
+        
+    def connect(self):
+        self.cidpress = self.canvas.mpl_connect(
+            'button_press_event', self.on_press)
+        self.cidrelease = self.canvas.mpl_connect(
+            'button_release_event', self.on_release)
+        self.cidmotion = self.canvas.mpl_connect(
+            'motion_notify_event', self.on_motion)
+
+
+    def on_press(self, event):
+        self.press = event.xdata, event.ydata
+        
+    def on_motion(self, event):
+        if self.press is None:
+            return
+
+        if event.button == 1:
+            s = self.rv.rvs(1)
+            self.pt_lst.append((event.xdata + s[0], event.ydata + s[1]))
+        
+    def on_release(self, event):
+        self.press = None
+        self.redraw()
+        
+    def redraw(self):
+        if len(self.pt_lst) > 0:
+            x, y = zip(*self.pt_lst)
+        else:
+            x, y = [], []
+        
+        self.pt_plot.set_xdata(x)
+        self.pt_plot.set_ydata(y)
+        self.canvas.draw()
+
+    def return_points(self):
+        '''Returns the clicked points in the format the rest of the
+        code expects'''
+        return np.vstack(self.pt_lst).T
+        
+    def disconnect(self):
+        'disconnect all the stored connection ids'
+        self.rect.figure.canvas.mpl_disconnect(self.cidpress)
+        self.rect.figure.canvas.mpl_disconnect(self.cidrelease)
+        self.rect.figure.canvas.mpl_disconnect(self.cidmotion)
+        
+
+
 def predict_grid(bgplvm, resolution=50, which_indices=(0,1)):
     X = bgplvm.X.mean[:, which_indices]
     xi, yi = np.meshgrid(1.1 * np.linspace(X[:, 0].min(), X[:, 0].max(), resolution),
