@@ -6,6 +6,8 @@ from statsmodels.sandbox.stats.multicomp import multipletests
 
 from tqdm import tqdm
 
+import patsy
+
 def lr_tests(sample_info, expression_matrix, full_model, reduced_model='expression ~ 1'):
     tmp = sample_info.copy()
 
@@ -48,3 +50,19 @@ def lr_tests(sample_info, expression_matrix, full_model, reduced_model='expressi
     fit_results['qval'] = multipletests(fit_results['pval'], method='b')[1]
     
     return fit_results
+
+def regress_out(sample_info, expression_matrix, covariate_formula, design_formula='1'):
+    ''' Implementation of limma's removeBatchEffect function
+    '''
+    # Ensure intercept is not part of covariates
+    covariate_formula += ' - 1'
+    covariate_matrix = patsy.dmatrix(covariate_formula, sample_info)
+    design_matrix = patsy.dmatrix(design_formula, sample_info)
+    
+    design_batch = np.hstack((design_matrix, covariate_matrix))
+
+    coefficients, res, rank, s = np.linalg.lstsq(design_batch, expression_matrix.T)
+    beta = coefficients[-design_matrix.shape[1]][:, None]
+    regressed = expression_matrix - beta.dot(covariate_matrix.T)
+
+    return regressed
