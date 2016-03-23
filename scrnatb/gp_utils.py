@@ -3,26 +3,36 @@ import pandas as pd
 from scipy import optimize
 from scipy import stats
 from GPclust import OMGP
+import matplotlib.pyplot as plt
 from tqdm import tqdm
+
+def plot_2d_gplvm_fit(gplvm):
+    ''' Given a gplvm, predict 1-d latent variable fit in to 2-d data space
+    '''
+    X = gplvm.X.mean[:, [0]]
+    tt = np.linspace(X.min(), X.max())[:, None]
+    ttxy = gplvm.predict(tt)[0]
+    plt.plot(*ttxy.T, c='w', lw=5)
+    plt.plot(*ttxy.T, c='b')
 
 class point_sprayer(object):
     ''' Class for quickly drawing point cloud examples. Useful for demonstrations.
-    
+
     Only works with interactive backends. In Jupyter, do %matplotlib notebook.
     '''
     def __init__(self, ax, pix_err=1, std=0.1):
         self.canvas = ax.get_figure().canvas
-        
+
         self.rv = stats.multivariate_normal(mean=[0, 0], cov=std ** 2)
-        
+
         self.pt_lst = []
         self.pt_plot = ax.plot([], [], marker='o',
                                linestyle='none', zorder=5)[0]
         self.pix_err = pix_err
-        
+
         self.connect()
         self.press = False
-        
+
     def connect(self):
         self.cidpress = self.canvas.mpl_connect(
             'button_press_event', self.on_press)
@@ -34,7 +44,7 @@ class point_sprayer(object):
 
     def on_press(self, event):
         self.press = event.xdata, event.ydata
-        
+
     def on_motion(self, event):
         if self.press is None:
             return
@@ -42,17 +52,17 @@ class point_sprayer(object):
         if event.button == 1:
             s = self.rv.rvs(1)
             self.pt_lst.append((event.xdata + s[0], event.ydata + s[1]))
-        
+
     def on_release(self, event):
         self.press = None
         self.redraw()
-        
+
     def redraw(self):
         if len(self.pt_lst) > 0:
             x, y = zip(*self.pt_lst)
         else:
             x, y = [], []
-        
+
         self.pt_plot.set_xdata(x)
         self.pt_plot.set_ydata(y)
         self.canvas.draw()
@@ -61,13 +71,13 @@ class point_sprayer(object):
         '''Returns the clicked points in the format the rest of the
         code expects'''
         return np.vstack(self.pt_lst).T
-        
+
     def disconnect(self):
         'disconnect all the stored connection ids'
         self.rect.figure.canvas.mpl_disconnect(self.cidpress)
         self.rect.figure.canvas.mpl_disconnect(self.cidrelease)
         self.rect.figure.canvas.mpl_disconnect(self.cidmotion)
-        
+
 
 
 def predict_grid(bgplvm, resolution=50, which_indices=(0,1)):
@@ -80,9 +90,9 @@ def predict_grid(bgplvm, resolution=50, which_indices=(0,1)):
     pred_X[which_indices[1]] = yi.reshape(resolution ** 2)
 
     pred_Y, pred_Y_var = bgplvm.predict(pred_X.T)
-    
+
     extent = [xi.min(), xi.max(), yi.min(), yi.max()]
-    
+
     return pred_Y, pred_Y_var, extent
 
 
@@ -94,7 +104,7 @@ def breakpoint_linear(x, ts, k1, k2, c1):
 def identify_bifurcation_point(omgp, n_splits=30):
     mix_m = OMGP(omgp.X, omgp.Y, K=omgp.K, kernels=omgp.kern)
     mix_m.variance = omgp.variance
-    
+
     phi = omgp.phi
 
     log_liks = []
@@ -111,7 +121,7 @@ def identify_bifurcation_point(omgp, n_splits=30):
     x = t_splits
     y = np.array(log_liks)
     p, e = optimize.curve_fit(breakpoint_linear, x, y)
-    
+
     return p[0]
 
 
@@ -121,19 +131,19 @@ def phase_trajectory(lat_pse_tim_r, known_time):
     d = known_time
 
     @np.vectorize
-    def align_objective(t0): 
+    def align_objective(t0):
         return -stats.pearsonr((t_pos + t0) % t_pos.max(), d)[0] ** 2
 
     # One could use scipy.optimize to find the optimal phase. But in practice it is to
     # quick to evaluate the function that simple argmin on a grid works very well.
-        
+
     xx = np.linspace(t_pos.min(), t_pos.max(), 200)
     yy = align_objective(xx)
 
     res = {'x': xx[yy.argmin()]}
 
     new_t = (t_pos + res['x']) % t_pos.max() + t.min()
-    
+
     return new_t
 
 def bifurcation_statistics(omgp_gene, expression_matrix):
@@ -142,7 +152,7 @@ def bifurcation_statistics(omgp_gene, expression_matrix):
     bif_stats['amb_ll'] = np.nan
     bif_stats['shuff_bif_ll'] = np.nan
     bif_stats['shuff_amb_ll'] = np.nan
-    
+
     # Make a "copy" of provided OMGP but assign ambiguous mixture parameters
     omgp_gene_a = OMGP(omgp_gene.X, omgp_gene.Y,
                        K=omgp_gene.K,
@@ -170,7 +180,7 @@ def bifurcation_statistics(omgp_gene, expression_matrix):
                              variance=float(omgp_gene.variance))
 
     omgp_gene_shuff_a.phi = np.ones_like(omgp_gene.phi) * 1. / omgp_gene.K
-    
+
     # Evaluate the likelihoods of the models for every gene
     for gene in tqdm(expression_matrix.index):
         omgp_gene.Y = expression_matrix.ix[gene][:, None]
@@ -188,9 +198,9 @@ def bifurcation_statistics(omgp_gene, expression_matrix):
         omgp_gene_shuff_a.Y = omgp_gene.Y
         omgp_gene_shuff_a.YYT = omgp_gene.YYT
         bif_stats.ix[gene, 'shuff_amb_ll'] = omgp_gene_shuff_a.bound()
-    
+
     bif_stats['phi0_corr'] = expression_matrix.corrwith(pd.Series(omgp_gene.phi[:, 0], index=expression_matrix.columns), 1)
     bif_stats['D'] = bif_stats['bif_ll'] - bif_stats['amb_ll']
     bif_stats['shuff_D'] = bif_stats['shuff_bif_ll'] - bif_stats['shuff_amb_ll']
-    
+
     return bif_stats
