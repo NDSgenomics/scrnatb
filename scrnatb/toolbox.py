@@ -93,3 +93,22 @@ def read_quants(sample_dir, suffix='_salmon_out', tool='salmon', isoforms=False)
     
     elif tool == 'cufflinks':
         return read_cufflinks_dir(pattern)
+
+
+def read_salmon_qc(sample_path, flen_lim=(100, 100)):
+    flen_dist = np.fromfile(sample_path + '/libParams/flenDist.txt', sep='\t')
+    global_fl_mode = flen_dist.argmax()
+    robust_fl_mode = flen_dist[flen_lim[0]:-flen_lim[1]].argmax() + flen_lim[0]
+    qc_data = pd.read_json(sample_path + '/aux/meta_info.json', typ='series')[['num_processed', 'num_mapped', 'percent_mapped']]
+    qc_data['global_fl_mode'] = global_fl_mode
+    qc_data['robust_fl_mode'] = robust_fl_mode
+    
+    return qc_data
+
+def read_salmon_dir_qc(pattern, flen_lim=(100, 100)):
+    QCs = pd.DataFrame()
+    for sample_path in tqdm(iglob(pattern)):
+        sample_qc = read_salmon_qc(sample_path, flen_lim=flen_lim)
+        QCs[sample_path] = sample_qc
+        
+    return QCs.T
