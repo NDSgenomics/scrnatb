@@ -2,7 +2,10 @@ import numpy as np
 import pandas as pd
 from scipy import optimize
 from scipy import stats
+
 from GPclust import OMGP
+from GPy.util.linalg import pdinv, dpotrs
+
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
@@ -149,6 +152,33 @@ def phase_trajectory(lat_pse_tim_r, known_time):
 
     return new_t
 
+
+def omgp_model_bound(omgp):
+    ''' Calculate the part of the omgp bound which does not depend
+    on the response variable.
+    '''
+    GP_bound = 0.0
+
+    LBs = []
+    # Precalculate the bound minus data fit,
+    # and LB matrices used for data fit term.
+    for i, kern in enumerate(omgp.kern):
+        K = kern.K(omgp.X)
+        B_inv = np.diag(1. / ((omgp.phi[:, i] + 1e-6) / omgp.variance))
+        Bi, LB, LBi, Blogdet = pdinv(K + B_inv)
+        LBs.append(LB)
+
+        # Penalty
+        GP_bound -= 0.5 * Blogdet
+
+        # Constant
+        GP_bound -= 0.5 * omgp.D * np.einsum('j,j->', omgp.phi[:, i], np.log(2 * np.pi * omgp.variance))
+
+    model_bound = GP_bound + omgp.mixing_prop_bound() + omgp.H
+
+    return model_bound, LBs
+
+
 def bifurcation_statistics(omgp_gene, expression_matrix):
     ''' Given an OMGP model and an expression matrix, evaluate how well
     every gene fits the model.
@@ -187,23 +217,23 @@ def bifurcation_statistics(omgp_gene, expression_matrix):
 
     omgp_gene_shuff_a.phi = np.ones_like(omgp_gene.phi) * 1. / omgp_gene.K
 
-    # Evaluate the likelihoods of the models for every gene
+    # Precalculate response-variable independent parts
+    omgps = [omgp_gene, omgp_gene_a, omgp_gene_shuff, omgp_gene_shuff_a]
+    column_list = ['bif_ll', 'amb_ll', 'shuff_bif_ll', 'shuff_amb_ll']
+    precalcs = [omgp_model_bound(omgp) for omgp in omgps]
+
+    # Calculate the likelihoods of the models for every gene
     for gene in tqdm(expression_matrix.index):
-        omgp_gene.Y = expression_matrix.ix[gene][:, None]
-        omgp_gene.YYT = np.outer(omgp_gene.Y, omgp_gene.Y)
-        bif_stats.ix[gene, 'bif_ll'] = omgp_gene.bound()
+        Y = expression_matrix.ix[gene]
+        YYT = np.outer(Y, Y)
 
-        omgp_gene_a.Y = omgp_gene.Y
-        omgp_gene_a.YYT = omgp_gene.YYT
-        bif_stats.ix[gene, 'amb_ll'] = omgp_gene_a.bound()
+        for precalc, column in zip(precalcs, column_list):
+            model_bound, LBs = precalc
+            GP_data_fit = 0.
+            for LB in LBs:
+                GP_data_fit -= .5 * dpotrs(LB, YYT)[0].trace()
 
-        omgp_gene_shuff.Y = omgp_gene.Y
-        omgp_gene_shuff.YYT = omgp_gene.YYT
-        bif_stats.ix[gene, 'shuff_bif_ll'] = omgp_gene_shuff.bound()
-
-        omgp_gene_shuff_a.Y = omgp_gene.Y
-        omgp_gene_shuff_a.YYT = omgp_gene.YYT
-        bif_stats.ix[gene, 'shuff_amb_ll'] = omgp_gene_shuff_a.bound()
+            bif_stats.ix[gene, column] = model_bound + GP_data_fit
 
     bif_stats['phi0_corr'] = expression_matrix.corrwith(pd.Series(omgp_gene.phi[:, 0], index=expression_matrix.columns), 1)
     bif_stats['D'] = bif_stats['bif_ll'] - bif_stats['amb_ll']
