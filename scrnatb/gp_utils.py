@@ -97,6 +97,9 @@ def predict_grid(bgplvm, resolution=50, which_indices=(0,1)):
 
 
 def breakpoint_linear(x, ts, k1, k2, c1):
+    '''Function representing a step-wise linear curve with one
+    breakpoint located at ts.
+    '''
     return np.piecewise(x, [x < ts], [lambda x: k1 * x + c1,
                                       lambda x: k2 * x + (k1 - k2) * ts + c1])
 
@@ -147,6 +150,9 @@ def phase_trajectory(lat_pse_tim_r, known_time):
     return new_t
 
 def bifurcation_statistics(omgp_gene, expression_matrix):
+    ''' Given an OMGP model and an expression matrix, evaluate how well
+    every gene fits the model.
+    '''
     bif_stats = pd.DataFrame(index=expression_matrix.index)
     bif_stats['bif_ll'] = np.nan
     bif_stats['amb_ll'] = np.nan
@@ -156,7 +162,7 @@ def bifurcation_statistics(omgp_gene, expression_matrix):
     # Make a "copy" of provided OMGP but assign ambiguous mixture parameters
     omgp_gene_a = OMGP(omgp_gene.X, omgp_gene.Y,
                        K=omgp_gene.K,
-                       kernels=omgp_gene.kern,
+                       kernels=[k.copy() for k in omgp_gene.kern],
                        prior_Z=omgp_gene.prior_Z,
                        variance=float(omgp_gene.variance))
 
@@ -169,13 +175,13 @@ def bifurcation_statistics(omgp_gene, expression_matrix):
 
     omgp_gene_shuff = OMGP(shuff_X, omgp_gene.Y,
                            K=omgp_gene.K,
-                           kernels=omgp_gene.kern,
+                           kernels=[k.copy() for k in omgp_gene.kern],
                            prior_Z=omgp_gene.prior_Z,
                            variance=float(omgp_gene.variance))
 
     omgp_gene_shuff_a = OMGP(shuff_X, omgp_gene.Y,
                              K=omgp_gene.K,
-                             kernels=omgp_gene.kern,
+                             kernels=[k.copy() for k in omgp_gene.kern],
                              prior_Z=omgp_gene.prior_Z,
                              variance=float(omgp_gene.variance))
 
