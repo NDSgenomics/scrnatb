@@ -209,6 +209,8 @@ def bifurcation_statistics(omgp_gene, expression_matrix):
                            prior_Z=omgp_gene.prior_Z,
                            variance=float(omgp_gene.variance))
 
+    omgp_gene_shuff.phi = omgp_gene.phi
+
     omgp_gene_shuff_a = OMGP(shuff_X, omgp_gene.Y,
                              K=omgp_gene.K,
                              kernels=[k.copy() for k in omgp_gene.kern],
